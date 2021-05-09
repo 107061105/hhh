@@ -55,7 +55,7 @@ int gesture_index;
 // For measuring the tilt angle;
 int16_t rDataXYZ[3] = {0};
 int16_t ppDataXYZ[3] = {0};
-int idR[32] = {0};
+int idR[64] = {0};
 int indexR = 0;
 
 const char* topic = "Mbed";
@@ -64,8 +64,8 @@ Thread mqtt_thread(osPriorityNormal);
 Thread thread(osPriorityHigh);
 Thread rpcthread(osPriorityNormal);
 //Thread t;
-EventQueue mqtt_queue;
-EventQueue queue;
+EventQueue mqtt_queue(64 * EVENTS_EVENT_SIZE);
+EventQueue queue(64 * EVENTS_EVENT_SIZE);
 EventQueue rpcqueue;
 
 bool _confirm = false;  // whether user bottom is pressed
@@ -136,12 +136,6 @@ void Confirm()
   _confirm = true;
   //mqtt_queue.call(confirm_info);
 }
-
-/*void startRecord(MQTT::Client<MQTTNetwork, Countdown>* client) {
-   printf("---start---\n");
-   idR[indexR++] = mqtt_queue.call_every(500ms, publish_message2, client);
-   indexR = indexR % 32;
-}*/
 
 void close_mqtt(void) {
     closed = true;
@@ -501,12 +495,12 @@ void b(Arguments *in, Reply *out) {
   printf("---TiltAngle Start---\n");
   while (!off2) {
     idR[indexR++] = queue.call(record);
-    indexR = indexR % 32;
+    indexR = indexR % 64;
     ThisThread::sleep_for(200ms);
   }
+  for (auto &i : idR) queue.cancel(i);
   ThisThread::sleep_for(2000ms);
   printf("---TiltAngle Stop---\n");
-  for (auto &i : idR) queue.cancel(i);
   _confirm = false;
   off2 = false;
   led3 = 0;
