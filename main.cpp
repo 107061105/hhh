@@ -17,7 +17,10 @@
 #include "tensorflow/lite/version.h"
 #include "math.h"
 #include "string.h"
+#include "uLCD_4DGL.h"
 using namespace std::chrono;
+
+
 
 // For run a RPC loop with two custom functions (operation modes): 
 // (1) gesture UI, and (2) tilt angle detection
@@ -31,6 +34,9 @@ RPCFunction rpcAD(&b, "b");
 DigitalOut led1(LED1);
 DigitalOut led2(LED2);
 DigitalOut led3(LED3);
+
+// uLCD
+uLCD_4DGL uLCD(D1, D0, D2); // serial tx, serial rx, reset pin;
 
 // GLOBAL VARIABLES
 Timer debounce;                  //define debounce timer
@@ -79,7 +85,7 @@ void messageArrived(MQTT::MessageData& md) {
     char msg[300];
     //sprintf(msg, "Message arrived: QoS%d, retained %d, dup %d, packetID %d\r\n", message.qos, message.retained, message.dup, message.id);
     //printf(msg);
-    ThisThread::sleep_for(100ms);
+    //ThisThread::sleep_for(100ms);
     char payload[300];
 
     sprintf(payload, "Message arrived: %.*s\r\n", message.payloadlen, (char*)message.payload);
@@ -292,6 +298,34 @@ int main() {
     return 0;
 }
 
+void Freq_info() {
+      uLCD.cls();
+      uLCD.printf("\n Angle is:\n");
+      if (gesture_index == 0) {             // 30 degree
+            uLCD.printf("\n > 30\n");
+            uLCD.printf("\n   45\n");
+            uLCD.printf("\n   60\n");
+      } else if (gesture_index == 1) {      // 45 degree
+            uLCD.printf("\n   30\n");
+            uLCD.printf("\n > 45\n");
+            uLCD.printf("\n   60\n");
+      } else if (gesture_index == 2) {      // 60 degree
+            uLCD.printf("\n   30\n");
+            uLCD.printf("\n   45\n");
+            uLCD.printf("\n > 60\n");
+      }
+}
+
+void Freq_confirm() {
+      uLCD.printf("\n Confirm!\n");
+}
+
+void nowAngle(double value) {
+      uLCD.cls();
+      uLCD.printf("\n Now angle is:\n");
+      uLCD.printf("\n %g\n", value);
+}
+
 void selectAngle() {
     // Whether we should clear the buffer next time we fetch data
   bool should_clear_buffer = false;
@@ -395,11 +429,13 @@ void selectAngle() {
       if (gesture_index == 0) select_angle = 30;
       else if (gesture_index == 1) select_angle = 45;
       else if (gesture_index == 2) select_angle = 60;
+      queue.call(Freq_info);
     }
 
     if (_confirm && select_angle) {
       printf("Confirm!!!!, angle = %d\n", select_angle);
       _confirm = false;
+      queue.call(Freq_confirm);
       queue.call(&publish_message1, rpcClient);
       return;
     }
@@ -420,27 +456,30 @@ void a(Arguments *in, Reply *out) {
 }
 
 void record(void) {
-   double angle = 0;
-   double absr = 0, abspp = 0;
-   double value = 0;
+  double angle = 0;
+  double absr = 0, abspp = 0;
+  double value = 0;
 
-   BSP_ACCELERO_AccGetXYZ(ppDataXYZ);
-   led3 = !led3;
-   value = (rDataXYZ[0] * ppDataXYZ[0] + rDataXYZ[1] * ppDataXYZ[1] + rDataXYZ[2] * ppDataXYZ[2]);
-   value = value / sqrt(rDataXYZ[0] * rDataXYZ[0] + rDataXYZ[1] * rDataXYZ[1] + rDataXYZ[2] * rDataXYZ[2]);
-   value = value / sqrt(ppDataXYZ[0] * ppDataXYZ[0] + ppDataXYZ[1] * ppDataXYZ[1] + ppDataXYZ[2] * ppDataXYZ[2]);
-   angle = acos(value);
-   angle = angle / 3.14 * 180;
-   printf("angle = %g\n", angle);
+  BSP_ACCELERO_AccGetXYZ(ppDataXYZ);
+  led3 = !led3;
+  value = (rDataXYZ[0] * ppDataXYZ[0] + rDataXYZ[1] * ppDataXYZ[1] + rDataXYZ[2] * ppDataXYZ[2]);
+  value = value / sqrt(rDataXYZ[0] * rDataXYZ[0] + rDataXYZ[1] * rDataXYZ[1] + rDataXYZ[2] * rDataXYZ[2]);
+  value = value / sqrt(ppDataXYZ[0] * ppDataXYZ[0] + ppDataXYZ[1] * ppDataXYZ[1] + ppDataXYZ[2] * ppDataXYZ[2]);
+  angle = acos(value);
+  angle = angle / 3.14 * 180;
+  uLCD.cls();
+  uLCD.printf("\n Now angle is:\n");
+  uLCD.printf("\n %g\n", angle);
+  //queue.call(&nowAngle, angle);
 
-   if (angle > select_angle) {
+  if (angle > select_angle) {
     queue.call(&publish_message2, rpcClient);
-   }
+  }
 }
 
 void stopRecord(void) {
-   printf("---TiltAngle Stop---\n");
-   for (auto &i : idR)
+    printf("---TiltAngle Stop---\n");
+    for (auto &i : idR)
       queue.cancel(i);
 }
 
@@ -458,13 +497,16 @@ void b(Arguments *in, Reply *out) {
     ThisThread::sleep_for(200ms);
   }
   led1 = led2 = 0;
+  ThisThread::sleep_for(1000ms);
   printf("---TiltAngle Start---\n");
   while (!off2) {
     idR[indexR++] = queue.call(record);
     indexR = indexR % 32;
     ThisThread::sleep_for(200ms);
   }
-  queue.call(stopRecord);
+  ThisThread::sleep_for(2000ms);
+  printf("---TiltAngle Stop---\n");
+  for (auto &i : idR) queue.cancel(i);
   _confirm = false;
   off2 = false;
   led3 = 0;
