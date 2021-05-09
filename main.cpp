@@ -65,7 +65,7 @@ EventQueue rpcqueue;
 bool _confirm = false;  // whether user bottom is pressed
 bool off1 = false;      // whether gesture UI mode is done
 bool off2 = false;      // whether tilt angle mode is done
-int index_a = -1;       // the index of selected angle
+int select_angle = 0;    // the selected angle
 int tiltcount = 0;      // the nuber of tilt events
 
 void confirm_info() {
@@ -79,7 +79,7 @@ void messageArrived(MQTT::MessageData& md) {
     char msg[300];
     //sprintf(msg, "Message arrived: QoS%d, retained %d, dup %d, packetID %d\r\n", message.qos, message.retained, message.dup, message.id);
     //printf(msg);
-    ThisThread::sleep_for(1000ms);
+    ThisThread::sleep_for(100ms);
     char payload[300];
 
     sprintf(payload, "Message arrived: %.*s\r\n", message.payloadlen, (char*)message.payload);
@@ -131,17 +131,11 @@ void Confirm()
   //mqtt_queue.call(confirm_info);
 }
 
-void startRecord(MQTT::Client<MQTTNetwork, Countdown>* client) {
+/*void startRecord(MQTT::Client<MQTTNetwork, Countdown>* client) {
    printf("---start---\n");
    idR[indexR++] = mqtt_queue.call_every(500ms, publish_message2, client);
    indexR = indexR % 32;
-}
-
-void stopRecord(void) {
-   printf("---stop---\n");
-   for (auto &i : idR)
-      mqtt_queue.cancel(i);
-}
+}*/
 
 void close_mqtt(void) {
     closed = true;
@@ -279,8 +273,8 @@ int main() {
     
     while (1) {
             if (closed) break;
-            client.yield(500);
-            ThisThread::sleep_for(500ms);
+            client.yield(100);
+            ThisThread::sleep_for(100ms);
     }
 
     printf("Ready to close MQTT Network......\n");
@@ -398,11 +392,13 @@ void selectAngle() {
     // Produce an output
     if (gesture_index < label_num) {
       error_reporter->Report(config.output_message[gesture_index]);
-      index_a = gesture_index;
+      if (gesture_index == 0) select_angle = 30;
+      else if (gesture_index == 1) select_angle = 45;
+      else if (gesture_index == 2) select_angle = 60;
     }
 
-    if (_confirm && index_a < label_num) {
-      printf("Confirm!!!!, gesture = %d\n", index_a);
+    if (_confirm && select_angle) {
+      printf("Confirm!!!!, angle = %d\n", select_angle);
       _confirm = false;
       queue.call(&publish_message1, rpcClient);
       return;
@@ -435,11 +431,17 @@ void record(void) {
    value = value / sqrt(ppDataXYZ[0] * ppDataXYZ[0] + ppDataXYZ[1] * ppDataXYZ[1] + ppDataXYZ[2] * ppDataXYZ[2]);
    angle = acos(value);
    angle = angle / 3.14 * 180;
-   //printf("angle = %g\n", angle);
+   printf("angle = %g\n", angle);
 
-   if (angle > 60) {
+   if (angle > select_angle) {
     queue.call(&publish_message2, rpcClient);
    }
+}
+
+void stopRecord(void) {
+   printf("---TiltAngle Stop---\n");
+   for (auto &i : idR)
+      queue.cancel(i);
 }
 
 void b(Arguments *in, Reply *out) {
@@ -462,7 +464,8 @@ void b(Arguments *in, Reply *out) {
     indexR = indexR % 32;
     ThisThread::sleep_for(200ms);
   }
-  printf("---TiltAngle Stop---\n");
+  queue.call(stopRecord);
+  _confirm = false;
   off2 = false;
   led3 = 0;
 }
